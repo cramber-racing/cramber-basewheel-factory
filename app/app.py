@@ -121,6 +121,8 @@ class App(tk.Tk):
             parts = []
             if dev["fw_version"] is not None:
                 parts.append(f"FW v{dev['fw_version']}")
+            if self.client.serial:
+                parts.append(f"SN {self.client.serial}")
             if dev["axis_state"] is not None:
                 parts.append(dev["axis_state"].name.replace("_", " ").lower())
             if dev["drv_fault"]:

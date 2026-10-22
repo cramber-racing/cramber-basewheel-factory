@@ -301,6 +301,7 @@ class ConfigClient:
 
     def __init__(self):
         self._dev = None
+        self.serial: str | None = None
         self._sequence = 0
         self._lock = threading.RLock()
         self._client_tag = random.randint(1, 0xFFFF)
@@ -325,6 +326,7 @@ class ConfigClient:
             raise ProtocolError("Vendor config interface (usage page 0xFF00) not found")
 
         self._dev = vendor_dev
+        self.serial = (vendor_dev.serial_number or "").removeprefix("CRAMBER-DD-") or None
         vendor_dev.set_raw_data_handler(self._on_input_report)
 
     on_telemetry = None
