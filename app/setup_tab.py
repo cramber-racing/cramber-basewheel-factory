@@ -19,7 +19,8 @@ from hid_protocol import (
 
 
 class Step:
-    def __init__(self, parent, row, title, description, button_text, command, button_style="TButton"):
+    def __init__(self, parent, row, title, description, button_text, command, button_style="TButton",
+                 secondary=None):
         self.marker = ttk.Label(parent, text="○", style="Card.Muted.TLabel", width=2, anchor="center")
         self.marker.grid(row=row, column=0, sticky="n", pady=(10, 0))
 
@@ -33,14 +34,22 @@ class Step:
         self.status = ttk.Label(parent, text="—", style="Card.Muted.TLabel", anchor="e")
         self.status.grid(row=row, column=2, sticky="e", padx=12)
 
-        self.button = ttk.Button(parent, text=button_text, command=command, style=button_style, state="disabled")
-        self.button.grid(row=row, column=3, sticky="e")
+        buttons = ttk.Frame(parent, style="Card.TFrame")
+        buttons.grid(row=row, column=3, sticky="e")
+        self.secondary = None
+        if secondary is not None:
+            self.secondary = ttk.Button(buttons, text=secondary[0], command=secondary[1], state="disabled")
+            self.secondary.pack(side="left", padx=(0, 6))
+        self.button = ttk.Button(buttons, text=button_text, command=command, style=button_style, state="disabled")
+        self.button.pack(side="left")
 
     def set(self, *, status: str, tone: str, enabled: bool, done: bool, current: bool):
         self.status.configure(text=status, style=f"Card.{tone}.TLabel")
         self.marker.configure(text="✓" if done else ("→" if current else "○"),
                               style="Card.Ok.TLabel" if done else ("Card.Primary.TLabel" if current else "Card.Muted.TLabel"))
         self.button.configure(state="normal" if enabled else "disabled")
+        if self.secondary is not None:
+            self.secondary.configure(state="normal" if enabled else "disabled")
 
 
 class SetupTab(ttk.Frame):
@@ -80,12 +89,13 @@ class SetupTab(ttk.Frame):
         self.steps = {
             "motor": Step(s, 0, "1  Motor", "Measures phase resistance and inductance; sets the current loop gains.",
                           "Calibrate", self._on_calibrate_motor),
-            "home": Step(s, 1, "2  Find index", "Turns the wheel up to one revolution to find the encoder's index pulse.",
+            "home": Step(s, 1, "2  Find index", "Turns the wheel up to one revolution to find the encoder's index pulse, "
+                                                "then to the center once the encoder is calibrated.",
                          "Home", self._on_home),
             "encoder": Step(s, 2, "3  Encoder", "Sweeps one revolution to learn the electrical offset and linearity.",
                             "Calibrate", self._on_calibrate_encoder),
             "center": Step(s, 3, "4  Center", "Hold the wheel perfectly straight, then set this position as 0°.",
-                           "Set center", self._on_set_center),
+                           "Set center", self._on_set_center, secondary=("Reset", self._on_reset_center)),
             "anticogging": Step(s, 4, "5  Anticogging (optional)", "Maps the motor's cogging torque so it can be cancelled.",
                                 "Calibrate", self._on_calibrate_anticogging),
             "save": Step(s, 5, "6  Save", "Stores the configuration on the base and reboots it.",
@@ -285,6 +295,17 @@ class SetupTab(ttk.Frame):
                 self.log(f"Scan moved {delta} counts, expected {cpr} ({ratio:.3f} rev for {pole_pairs} pole pairs). "
                          f"Smooth turn -> pole pairs ~ {pole_pairs / ratio if ratio else 0:.2f}; "
                          "stuck/skipped -> raise the calibration test current.")
+
+        self._run_async(task)
+
+    def _on_reset_center(self):
+        def task():
+            resp = self._client().set(ParamId.ENCODER_MECHANICAL_OFFSET, ValueType.I32, 0)
+            self.log(f"Reset center (offset = 0, the index is the center) -> {resp.status.name}")
+            if resp.status == Status.OK:
+                self.mark_unsaved()
+                if self.refresh_tabs:
+                    self.refresh_tabs()
 
         self._run_async(task)
 
