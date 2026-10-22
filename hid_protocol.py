@@ -1,4 +1,4 @@
-import ctypes
+import random
 import struct
 import threading
 import time
@@ -7,14 +7,6 @@ from enum import IntEnum
 from typing import Union
 
 import pywinusb.hid as hid
-
-_hid_dll = ctypes.WinDLL("hid.dll", use_last_error=True)
-_hid_dll.HidD_GetInputReport.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-    ctypes.c_ulong,
-]
-_hid_dll.HidD_GetInputReport.restype = ctypes.c_bool
 
 USB_VID = 0x1209
 USB_PID = 0x4FFB
@@ -285,7 +277,7 @@ class ProtocolError(RuntimeError):
     pass
 
 
-class _SequenceMismatch(ProtocolError):
+class _NoReply(ProtocolError):
     pass
 
 
@@ -302,10 +294,16 @@ def _pack_value(value_type: ValueType, value) -> bytes:
 
 
 class ConfigClient:
+    _REPLY_TIMEOUT_S = 0.1
+
     def __init__(self):
         self._dev = None
         self._sequence = 0
         self._lock = threading.RLock()
+        self._client_tag = random.randint(1, 0xFFFF)
+        self._waiting_seq: int | None = None
+        self._reply: bytes | None = None
+        self._reply_event = threading.Event()
 
     def connect(self, vid: int = USB_VID, pid: int = USB_PID) -> None:
         devices = hid.HidDeviceFilter(vendor_id=vid, product_id=pid).get_devices()
@@ -330,7 +328,15 @@ class ConfigClient:
 
     def _on_input_report(self, data) -> None:
         try:
-            if data and data[0] == REPORT_ID_TELEMETRY and self.on_telemetry is not None:
+            if not data:
+                return
+            if data[0] == REPORT_ID_RESPONSE and len(data) > REPORT_SIZE:
+                raw = bytes(data[1 : REPORT_SIZE + 1])
+                tag = struct.unpack_from("<H", raw, 10)[0]
+                if tag == self._client_tag and raw[9] == self._waiting_seq:
+                    self._reply = raw
+                    self._reply_event.set()
+            elif data[0] == REPORT_ID_TELEMETRY and self.on_telemetry is not None:
                 self.on_telemetry(bytes(data[1:]))
         except Exception:
             pass
@@ -352,15 +358,6 @@ class ConfigClient:
     def is_connected(self) -> bool:
         return self._dev is not None and self._dev.is_plugged()
 
-    def _get_input_report(self, report_id: int, length: int) -> bytes:
-        buf = ctypes.create_string_buffer(length)
-        buf[0] = report_id
-        if not _hid_dll.HidD_GetInputReport(int(self._dev.hid_handle), buf, length):
-            raise ProtocolError(
-                f"HidD_GetInputReport failed (err={ctypes.get_last_error()})"
-            )
-        return bytes(buf.raw)
-
     def _next_sequence(self) -> int:
         self._sequence = (self._sequence + 1) & 0xFF
         return self._sequence
@@ -372,7 +369,6 @@ class ConfigClient:
             return self._transact_locked(command, param_id, value_type, value_bytes)
 
     _RESENDABLE = {Command.GET, Command.GET_STATUS, Command.GET_DEFAULT, Command.TELEMETRY}
-    _REREADS = 5
 
     def _transact_locked(
         self, command: Command, param_id: int, value_type: ValueType, value_bytes: bytes
@@ -381,7 +377,7 @@ class ConfigClient:
         for attempt in range(attempts):
             try:
                 return self._transact_once(command, param_id, value_type, value_bytes)
-            except _SequenceMismatch:
+            except _NoReply:
                 if attempt == attempts - 1:
                     raise
 
@@ -399,37 +395,31 @@ class ConfigClient:
         payload[3] = int(value_type)
         payload[4:8] = value_bytes
         payload[8] = sequence
+        payload[9:11] = struct.pack("<H", self._client_tag)
 
         report = bytes([REPORT_ID_COMMAND]) + bytes(payload)
 
+        self._reply = None
+        self._reply_event.clear()
+        self._waiting_seq = sequence
         try:
             self._dev.send_output_report(report)
-            for read in range(self._REREADS):
-                raw = self._get_input_report(REPORT_ID_RESPONSE, REPORT_SIZE + 1)
-                if not raw or len(raw) < REPORT_SIZE + 1:
-                    raise ProtocolError("malformed response from device")
-                if raw[1 + 9] == sequence:
-                    break
-                time.sleep(0.002 * (read + 1))
-        except ProtocolError:
-            raise
+            got_reply = self._reply_event.wait(self._REPLY_TIMEOUT_S)
         except Exception as exc:
             self.close()
             raise ProtocolError(f"device disconnected: {exc}") from exc
+        finally:
+            self._waiting_seq = None
+        if not got_reply or self._reply is None:
+            raise _NoReply(f"no reply from the base (command {command.name}, sequence {sequence})")
 
-        raw = raw[1:]
-
+        raw = self._reply
         status = Status(raw[0])
         resp_command = raw[1]
         resp_param_id = struct.unpack("<H", bytes(raw[2:4]))[0]
         resp_value_type = ValueType(raw[4])
         resp_value = bytes(raw[5:9])
         resp_sequence = raw[9]
-
-        if resp_sequence != sequence:
-            raise _SequenceMismatch(
-                f"sequence mismatch: sent {sequence}, got {resp_sequence}"
-            )
 
         return Response(
             status,
