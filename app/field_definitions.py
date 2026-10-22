@@ -105,6 +105,11 @@ DIAGNOSTICS = [
         ("Encoder calibration phase", ParamId.ENCODER_CALIBRATION_PHASE, U32, True, None),
         ("Anticogging phase", ParamId.ANTICOGGING_PHASE, U32, True, None),
     ]),
+    ("FFB link (last second)", [
+        ("FFB reports from game (/s)", ParamId.FFB_REPORT_RATE_HZ, U32, True, None),
+        ("Constant force updates (/s)", ParamId.FFB_FORCE_RATE_HZ, U32, True, None),
+        ("Longest gap between updates (us)", ParamId.FFB_MAX_FORCE_GAP_US, U32, True, None),
+    ]),
     ("Motor driver (DRV8301)", [
         ("nFAULT active", ParamId.DRV_HAS_FAULT, BOOL, True, None),
         ("STATUS_1", ParamId.DRV_STATUS1, U32, True, None),
