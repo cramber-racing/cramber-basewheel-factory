@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Check the tag against pyproject.toml
+        run: |
+          version=$(sed -n 's/^version *= *"\([0-9.]*\)".*/\1/p' pyproject.toml)
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match pyproject.toml version ${version} (expected v${version})"
+            exit 1
+          fi
+
+      - name: Build the executable
+        run: |
+          uv run --with pyinstaller pyinstaller --noconfirm --onefile --windowed \
+            --name "Cramber-Factory-Tool-${GITHUB_REF_NAME}" \
+            --icon assets/icon.ico --add-data "assets/icon.ico;assets" \
+            main.py
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Cramber Factory Tool ${{ github.ref_name }}
+          body: |
+            Download `Cramber-Factory-Tool-${{ github.ref_name }}.exe` and run it: nothing else to install.
+
+            Connect a Cramber DD running the release firmware. The tool switches the base into factory mode when it connects.
+          draft: true
+          files: dist/Cramber-Factory-Tool-*.exe

@@ -104,6 +104,11 @@ of the motor's signals and diagnostics of the force feedback link.
 
 ## Getting started
 
+> [!TIP]
+> To just use the tool, download `Cramber-Factory-Tool-<version>.exe` from
+> [Releases](https://github.com/cramber-racing/cramber-basewheel-factory/releases) and run it: nothing else to
+> install. Then skip to step 3. The steps below are for running it from the source code.
+
 ### 1. Install the tools
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/), the Python package manager. It installs the

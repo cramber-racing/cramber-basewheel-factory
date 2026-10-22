@@ -1,6 +1,8 @@
+import sys
 import threading
 import time
 import tkinter as tk
+from pathlib import Path
 from tkinter import ttk
 
 from app import theme
@@ -11,6 +13,7 @@ from app.telemetry_view import TelemetryView
 from hid_protocol import ConfigClient
 
 POLL_INTERVAL_MS = 500
+ASSETS = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) / "assets"
 ERROR_WORDS = ("ERROR", "FAILED", "ERR_", "failed", "couldn't")
 
 
@@ -18,6 +21,10 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Cramber Factory Tool")
+        try:
+            self.iconbitmap(default=str(ASSETS / "icon.ico"))
+        except tk.TclError:
+            pass
         self.geometry("1180x820")
         self.minsize(960, 640)
         self.fonts = theme.apply(self)
