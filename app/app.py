@@ -120,7 +120,8 @@ class App(tk.Tk):
             self.conn_var.set("Connected · factory mode")
             parts = []
             if dev["fw_version"] is not None:
-                parts.append(f"FW v{dev['fw_version']}")
+                v = dev["fw_version"]  # packed (major << 16) | (minor << 8) | patch
+                parts.append(f"FW v{v >> 16}.{(v >> 8) & 0xFF}.{v & 0xFF}")
             if self.client.serial:
                 parts.append(f"SN {self.client.serial}")
             if dev["axis_state"] is not None:
