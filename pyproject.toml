@@ -1,7 +1,8 @@
 [project]
 name = "factory-app"
 version = "0.1.0"
-description = "Factory calibration tool for the Camber Base Wheel firmware"
+description = "Factory calibration tool for the Cramber Base Wheel firmware"
+license = "GPL-3.0-only"
 requires-python = ">=3.10"
 dependencies = [
     "pywinusb>=0.4.2",
